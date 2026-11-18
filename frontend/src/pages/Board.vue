@@ -7,6 +7,7 @@ const selected = ref(null)
 const detail = ref(null)
 const overview = ref(null)
 const err = ref('')
+const gone = ref(null)
 
 async function loadList() {
   overview.value = await api.overview()
@@ -18,7 +19,28 @@ async function loadList() {
 
 async function loadDetail(id) {
   if (!id) return
-  detail.value = await api.timeline(id)
+  gone.value = null
+  detail.value = null
+  try {
+    detail.value = await api.timeline(id)
+  } catch (e) {
+    // 旧键已重挂：后端 410，响应体 detail.remounted_to 指向承接键
+    try {
+      const body = JSON.parse(e.message)
+      if (body.detail?.remounted_to) {
+        gone.value = body.detail
+        return
+      }
+      err.value = body.detail?.message || String(e.message)
+    } catch (_) {
+      err.value = String(e.message || e)
+    }
+  }
+}
+
+function followRemount() {
+  if (!gone.value?.remounted_to) return
+  selected.value = gone.value.remounted_to
 }
 
 onMounted(async () => {
@@ -45,6 +67,7 @@ const proof = computed(() => detail.value?.proof)
       <div class="stat"><b>{{ overview.hops_primary }}</b><span>正式 hop</span></div>
       <div class="stat"><b>{{ overview.hops_sidecar }}</b><span>旁路</span></div>
       <div class="stat"><b>{{ overview.quarantine }}</b><span>隔离</span></div>
+      <div class="stat"><b>{{ overview.waybills_retired ?? 0 }}</b><span>已重挂旧键</span></div>
     </div>
 
     <div class="tri">
@@ -74,6 +97,15 @@ const proof = computed(() => detail.value?.proof)
             <div class="code">{{ h.event_code }}</div>
             <div class="loc">{{ h.location_code }} · {{ h.id }}</div>
           </div>
+        </div>
+        <div v-else-if="gone" class="gone-card">
+          <h3>该运单键已重挂</h3>
+          <p class="muted">{{ gone.message }}</p>
+          <dl class="kv">
+            <dt>承接键</dt><dd>{{ gone.remounted_to }}</dd>
+            <dt>迁移边</dt><dd class="mono">#{{ gone.edge_id }} · {{ gone.edge_uid }}</dd>
+          </dl>
+          <button class="btn" @click="followRemount">沿迁移边查看 {{ gone.remounted_to }} 全序</button>
         </div>
         <p v-else class="muted">无正式轨迹点</p>
       </section>

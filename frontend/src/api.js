@@ -20,4 +20,11 @@ export const api = {
   ingest: () => req('/api/ingest/run', { method: 'POST' }),
   proofs: (waybillId) =>
     req(waybillId ? `/api/status-proofs?waybill_id=${encodeURIComponent(waybillId)}` : '/api/status-proofs'),
+  remount: (oldKey, newKey, newTitle) =>
+    req('/api/remount', {
+      method: 'POST',
+      body: JSON.stringify({ old_key: oldKey, new_key: newKey, new_title: newTitle || null }),
+    }),
+  remounts: () => req('/api/remounts'),
+  remountProof: (edgeId) => req(`/api/remounts/${encodeURIComponent(edgeId)}/proof`),
 }

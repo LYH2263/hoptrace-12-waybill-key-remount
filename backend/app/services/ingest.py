@@ -19,9 +19,12 @@ def run_batch() -> dict:
     conn = connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
+        from app.modules.waybill_key_remount import resolve_active_key
+
         written = 0
         for hop in hops:
-            wid = hop["waybill_id"]
+            wid = resolve_active_key(conn, hop["waybill_id"])
+            hop["waybill_id"] = wid
             exists = conn.execute("SELECT 1 FROM waybills WHERE id=?", (wid,)).fetchone()
             if not exists:
                 conn.execute(

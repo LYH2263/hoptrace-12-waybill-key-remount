@@ -62,6 +62,9 @@ EVENT_STATUS = {
 def init_db():
     conn = connect()
     conn.executescript(SCHEMA)
+    from app.modules.waybill_key_remount import ensure_schema as ensure_remount_schema
+
+    ensure_remount_schema(conn)
     n = conn.execute("SELECT COUNT(*) AS c FROM waybills").fetchone()["c"]
     if n == 0:
         _seed_fixtures(conn)

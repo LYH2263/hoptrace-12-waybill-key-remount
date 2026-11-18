@@ -12,7 +12,12 @@ def overview():
     conn = connect()
     try:
         return {
-            "waybills": conn.execute("SELECT COUNT(*) AS c FROM waybills").fetchone()["c"],
+            "waybills": conn.execute(
+                "SELECT COUNT(*) AS c FROM waybills WHERE COALESCE(retired,0)=0"
+            ).fetchone()["c"],
+            "waybills_retired": conn.execute(
+                "SELECT COUNT(*) AS c FROM waybills WHERE COALESCE(retired,0)=1"
+            ).fetchone()["c"],
             "hops_primary": conn.execute(
                 "SELECT COUNT(*) AS c FROM hops WHERE channel='primary' AND retracted=0"
             ).fetchone()["c"],
@@ -29,8 +34,10 @@ def overview():
 def list_waybills():
     conn = connect()
     try:
+        # 运单索引协同：退休旧键不再对外列出，新键承接全序。
         rows = conn.execute(
-            "SELECT id, title, status_proj, created_at FROM waybills ORDER BY id"
+            "SELECT id, title, status_proj, created_at FROM waybills "
+            "WHERE COALESCE(retired,0)=0 ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -41,9 +48,22 @@ def list_waybills():
 def waybill_timeline(waybill_id: str):
     conn = connect()
     try:
+        guard = timeline_svc.access_guard(conn, waybill_id)
+        if guard["status"] != 200:
+            headers = None
+            if guard["status"] == 410:
+                headers = {"X-Remounted-To": guard.get("remounted_to", "")}
+            raise HTTPException(
+                status_code=guard["status"],
+                detail={
+                    "message": guard["detail"],
+                    "remounted_to": guard.get("remounted_to"),
+                    "edge_id": guard.get("edge_id"),
+                    "edge_uid": guard.get("edge_uid"),
+                },
+                headers=headers,
+            )
         wb = conn.execute("SELECT * FROM waybills WHERE id=?", (waybill_id,)).fetchone()
-        if not wb:
-            raise HTTPException(404, "运单不存在")
         hops = timeline_svc.list_primary(conn, waybill_id)
         proof = conn.execute(
             "SELECT * FROM status_proofs WHERE waybill_id=? ORDER BY id DESC LIMIT 1",
